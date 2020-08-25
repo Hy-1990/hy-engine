@@ -1,0 +1,59 @@
+spring:
+  sleuth:
+    web:
+      client:
+        enabled: true
+    sampler:
+      probability: 1.0 # 将采样比例设置为 1.0，也就是全部都需要。默认是 0.1
+  rabbitmq:
+    host: 192.168.6.82
+    port: 5672
+    username: huyi
+    password: 123456
+    virtual-host: /
+  redis:
+    timeout: 6000ms
+    password:
+    #单机配置
+    host: 192.168.6.82
+    port: 6379
+    #集群配置
+    #    cluster:
+    #      max-redirects: 1  # 获取失败 最大重定向次数
+    #      nodes: 192.168.3.128:6379
+    #连接池配置
+    lettuce:
+      pool:
+        max-active: 1000  #连接池最大连接数（使用负值表示没有限制）
+        max-idle: 10 # 连接池中的最大空闲连接
+        min-idle: 5 # 连接池中的最小空闲连接
+        max-wait: -1 # 连接池最大阻塞等待时间（使用负值表示没有限制）
+jetcache:
+  statIntervalMinutes: 15  #指定统计间隔，以分钟为单位。0表示没有统计数据。
+  areaInCacheName: false   #jetcache-anno使用缓存名称作为远程缓存密钥前缀，在jetcache 2.4.3
+    #和之前的版本中，它总是在缓存名称中添加区域名称，从2.4.4开始我们有这
+  #个配置项，为兼容原因，默认值为true。然而，虚假价值对于新项目更合理。
+  hidePackages: com.alibaba #包名称以（hiddenPackages）开始的将在生成的缓存
+  #实例名称中被截断
+  local:
+    default:
+      type: linkedhashmap
+      limit: 100
+      keyConvertor: fastjson
+      expireAfterWriteInMillis: 100000
+      expireAfterAccessInMillis: 100000
+  remote:
+    default:
+      type: redis
+      keyConvertor: fastjson
+      valueEncoder: java
+      valueDecoder: java
+      poolConfig:
+        minIdle: 5
+        maxIdle: 20
+        maxTotal: 50
+      host: 192.168.6.82
+      port: 6379
+
+
+
