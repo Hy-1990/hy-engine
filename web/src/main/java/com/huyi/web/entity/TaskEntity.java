@@ -14,6 +14,10 @@ import java.io.Serializable;
 @Builder
 public class TaskEntity implements Serializable {
   private static final long serialVersionUID = -230406315701273955L;
-  private String taskName;
-  private String msg;
+
+  private Integer planId;
+  private Integer status;
+
+  private Long amount;
+  private String param;
 }

@@ -26,7 +26,7 @@
         <RollingFile name="RollingFile" fileName="log/log.log"
                      filePattern="logs/$${date:yyyy-MM}/bot-%d{MM-dd-yyyy}-%i.log.gz">
             <PatternLayout pattern="%d{yyyy-MM-dd 'at' HH:mm:ss z} %-5level %t %class{1} - %msg%xEx%n"/>
-            <SizeBasedTriggeringPolicy size="2MB"/>
+            <SizeBasedTriggeringPolicy size="100MB"/>
         </RollingFile>
     </appenders>
 

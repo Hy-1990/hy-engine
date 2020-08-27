@@ -5,6 +5,7 @@ import com.huyi.common.aop.define.anno.MethodLog;
 import com.huyi.common.dto.HYResult;
 import com.huyi.common.utils.JsonUtils;
 import com.huyi.web.config.RabbitMqConfig;
+import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.entity.TaskEntity;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParams;
@@ -32,10 +33,22 @@ public class TestController {
       produces = "application/json;charset=UTF-8")
   @ResponseBody
   @MethodLog(methodLogLevel = MethodLogLevel.INFO)
-  public ResponseEntity test1(@RequestParam String taskName, @RequestParam String msg) {
-    rabbitTemplate.convertAndSend(
-        RabbitMqConfig.TASK_QUEUE,
-        JsonUtils.bean2Json(TaskEntity.builder().taskName(taskName).msg(msg).build()));
+  public ResponseEntity test1(@RequestBody TaskEntity entity) {
+    rabbitTemplate.convertAndSend(RabbitMqConfig.TASK_QUEUE, JsonUtils.bean2Json(entity));
+    return new ResponseEntity<>(new HYResult("OK").success(), HttpStatus.OK);
+  }
+
+  @ApiOperation(value = "测试接口2", httpMethod = "POST")
+  @ApiResponse(code = 200, message = "success", response = ResponseEntity.class)
+  @ApiImplicitParams({})
+  @RequestMapping(
+          value = "/test2",
+          method = RequestMethod.POST,
+          produces = "application/json;charset=UTF-8")
+  @ResponseBody
+  @MethodLog(methodLogLevel = MethodLogLevel.INFO)
+  public ResponseEntity test2(@RequestBody PlanEntity entity) {
+    rabbitTemplate.convertAndSend(RabbitMqConfig.PLAN_QUEUE, JsonUtils.bean2Json(entity));
     return new ResponseEntity<>(new HYResult("OK").success(), HttpStatus.OK);
   }
 }
