@@ -9,6 +9,7 @@ import com.huyi.web.entity.TaskEntity;
 import com.huyi.web.enums.CacheHyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
@@ -16,13 +17,18 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** @Author huyi @Date 2020/8/27 17:22 @Description: */
+@Component
 public class TaskCacheHandle {
   private final Logger log = LoggerFactory.getLogger(this.getClass());
 
   @CreateCache(name = RedisConstant.REAL_TASK_PREFIX, cacheType = CacheType.REMOTE)
   public Cache<String, List<TaskEntity>> taskCache;
 
-  @CreateCache(name = RedisConstant.TMP_TASK_PREFIX, cacheType = CacheType.REMOTE)
+  @CreateCache(
+      name = RedisConstant.TMP_TASK_PREFIX,
+      cacheType = CacheType.REMOTE,
+      expire = 30,
+      timeUnit = TimeUnit.MINUTES)
   public Cache<String, List<TaskEntity>> tempCache;
 
   /** 分布式锁 */

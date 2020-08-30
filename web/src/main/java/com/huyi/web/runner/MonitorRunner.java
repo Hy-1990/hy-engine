@@ -2,10 +2,12 @@ package com.huyi.web.runner;
 
 import com.huyi.common.utils.EmptyUtil;
 import com.huyi.common.utils.RedisUtil;
+import com.huyi.web.config.ThreadPoolConfig;
 import com.huyi.web.constant.RedisConstant;
 import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.handle.PlanCacheHandle;
 import com.huyi.web.handle.PlanHandle;
+import com.huyi.web.workers.InputWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,60 +31,7 @@ public class MonitorRunner implements ApplicationRunner {
 
   @Override
   public void run(ApplicationArguments args) throws Exception {
-    new Thread(
-            () -> {
-              while (true) {
-                try {
-                  TimeUnit.SECONDS.sleep(1);
-                } catch (InterruptedException e) {
-                  e.printStackTrace();
-                }
-                Set<String> keys = redisUtil.getAllKeyMatch(RedisConstant.PLAN_PREFIX);
-                System.out.println(keys);
-                keys.forEach(
-                    (x) -> {
-                      planCacheHandle
-                          .get(x.split("-")[2])
-                          .forEach((y) -> logger.info("监控缓存数据：{}", y));
-                    });
-                System.out.println("---------------------------------");
-              }
-            })
-        .start();
-
-    new Thread(
-            () -> {
-              while (true) {
-                try {
-                  TimeUnit.SECONDS.sleep(2);
-                } catch (InterruptedException e) {
-                  e.printStackTrace();
-                }
-                boolean hasRun =
-                    planCacheHandle.tryLockAndRun(
-                        "1",
-                        10,
-                        TimeUnit.SECONDS,
-                        () -> {
-                          LinkedBlockingQueue<PlanEntity> plans = planCacheHandle.get("1");
-                          PlanEntity planEntity = plans.poll();
-                          if (EmptyUtil.isNotEmpty(planEntity)) {
-                            PlanHandle.workQueue.offer(planEntity);
-                            planCacheHandle.put("1", plans);
-                          }
-                        });
-                if (hasRun) {
-                  PlanHandle.workQueue.forEach(
-                      (x) -> {
-                        logger.info("工作队列数据：{}", x);
-                      });
-                } else {
-                  logger.info("工作队列数据拉取失败！");
-                }
-                System.out.println("+++++++++++++++++++++++++++++++++");
-              }
-            })
-        .start();
-    logger.info("缓存监视器启动！");
+    ThreadPoolConfig.inputPool.scheduleAtFixedRate(
+        new InputWorker(planCacheHandle, redisUtil), 0, 15, TimeUnit.SECONDS);
   }
 }

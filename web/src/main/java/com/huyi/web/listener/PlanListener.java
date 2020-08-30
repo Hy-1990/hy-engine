@@ -31,7 +31,7 @@ public class PlanListener {
     PlanEntity planEntity = JsonUtils.json2Bean(message, PlanEntity.class);
     EXECUTOR_SERVICE.execute(
         () -> {
-          planHandle.savePlan(planEntity);
+          planHandle.dispatch(planEntity);
         });
   }
 }

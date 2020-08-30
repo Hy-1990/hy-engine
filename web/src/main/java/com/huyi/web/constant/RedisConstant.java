@@ -8,4 +8,9 @@ public class RedisConstant {
   public static final String REAL_TASK_PREFIX = "real-taskPlanId-";
   /** 计划前缀 */
   public static final String PLAN_PREFIX = "plan-userId-";
+
+  /** 暂停任务前缀 */
+  public static final String STOP_PREFIX = "stop-planId-";
+  /** 暂停任务关键字 */
+  public static final String STOP_KEY = "stopList";
 }

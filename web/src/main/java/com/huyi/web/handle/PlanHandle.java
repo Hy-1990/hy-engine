@@ -1,16 +1,20 @@
 package com.huyi.web.handle;
 
 import com.google.common.util.concurrent.Monitor;
-import com.huyi.common.log.HyLogger;
 import com.huyi.common.utils.EmptyUtil;
+import com.huyi.web.constant.RedisConstant;
 import com.huyi.web.entity.PlanEntity;
+import com.huyi.web.entity.TaskEntity;
+import com.huyi.web.enums.PlanCode;
+import com.huyi.web.enums.PlanType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
-import java.util.Comparator;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,15 +30,20 @@ public class PlanHandle {
   private static Monitor monitor = new Monitor();
 
   @Autowired private PlanCacheHandle planCacheHandle;
+  @Autowired private StopCacheHandle stopCacheHandle;
+  @Autowired private TaskCacheHandle taskCacheHandle;
 
-  public static LinkedBlockingQueue<PlanEntity> workQueue;
+  public static ConcurrentHashMap<Integer, List<TaskEntity>> workQueue;
+
+  public static ConcurrentHashMap<Integer, ConcurrentHashMap<Integer, PlanEntity>> planQueue;
 
   @PostConstruct
   public void init() {
-    workQueue = new LinkedBlockingQueue<>();
+    workQueue = new ConcurrentHashMap<>();
+    planQueue = new ConcurrentHashMap<>();
   }
 
-  public void savePlan(PlanEntity planEntity) {
+  public void dispatch(PlanEntity planEntity) {
     if (EmptyUtil.isEmpty(planEntity)
         || EmptyUtil.isEmpty(planEntity.getPlanId())
         || EmptyUtil.isEmpty(planEntity.getUserId())) {
@@ -48,6 +57,7 @@ public class PlanHandle {
     }
     AtomicBoolean result = new AtomicBoolean(false);
     AtomicInteger reTry = new AtomicInteger(0);
+    StringBuffer msg = new StringBuffer();
     String key = planEntity.getUserId() + "";
     while (true) {
       if (monitor.enterIf(monitor.newGuard(() -> reTry.get() < 3))) {
@@ -58,21 +68,56 @@ public class PlanHandle {
                   10,
                   TimeUnit.SECONDS,
                   () -> {
-                    LinkedBlockingQueue<PlanEntity> plans = planCacheHandle.get(key);
-                    LinkedBlockingQueue<PlanEntity> queue = new LinkedBlockingQueue<>();
+                    LinkedList<PlanEntity> plans = planCacheHandle.get(key);
+                    LinkedList<PlanEntity> queue = new LinkedList<>();
+                    // 空任务，创建
                     if (EmptyUtil.isEmpty(plans)) {
-                      result.set(queue.offer(planEntity));
-                      planCacheHandle.put(key, queue);
+                      if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
+                        result.set(queue.add(planEntity));
+                        planCacheHandle.put(key, queue);
+                        msg.append(PlanCode.CREATE_SUCCESS.getMsg());
+                      } else {
+                        result.set(false);
+                        msg.append(PlanCode.CREATE_INVALID.getMsg());
+                      }
                     } else {
-                      result.set(plans.offer(planEntity));
-                      HyLogger.logger().warn("huyi测试断电1：{}", plans.toString());
-                      queue =
-                          plans.stream()
-                              .sorted(Comparator.comparing(PlanEntity::getPlanTime))
-                              .sorted(Comparator.comparing(PlanEntity::getLevel).reversed())
-                              .collect(Collectors.toCollection(LinkedBlockingQueue::new));
-                      HyLogger.logger().warn("huyi测试断电2：{}", queue.toString());
-                      planCacheHandle.put(key, queue);
+                      if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
+                        if (!plans.contains(planEntity)) {
+                          result.set(plans.add(planEntity));
+                          queue =
+                              plans.stream()
+                                  .sorted(Comparator.comparing(PlanEntity::getPlanTime))
+                                  .sorted(Comparator.comparing(PlanEntity::getLevel).reversed())
+                                  .sorted(Comparator.comparing(PlanEntity::getStatus))
+                                  .collect(Collectors.toCollection(LinkedList::new));
+                          planCacheHandle.put(key, queue);
+                          msg.append(PlanCode.CREATE_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.CREATE_EXIST.getMsg());
+                        }
+                      } else if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
+                        boolean stop = saveStop(planEntity);
+                        if (stop) {
+                          result.set(true);
+                          msg.append(PlanCode.STOP_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.STOP_FAILED.getMsg());
+                        }
+                      } else if (planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
+                        boolean remove = removeStop(planEntity);
+                        if (remove) {
+                          result.set(true);
+                          msg.append(PlanCode.RERUN_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.RERUN_FAILED.getMsg());
+                        }
+                      } else {
+                        result.set(false);
+                        msg.append(PlanCode.PARAM_INVALID.getMsg());
+                      }
                     }
                   });
           if (hasRun) {
@@ -88,9 +133,36 @@ public class PlanHandle {
     }
 
     if (result.get()) {
-      logger.info("保存计划进缓存成功！");
+      logger.info(msg.toString());
     } else {
-      logger.error("保存九华进缓存失败!");
+      logger.error(msg.toString());
+    }
+  }
+
+  public boolean saveStop(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.STOP.getCode())) {
+      return false;
+    }
+    Set<Integer> stopSet = stopCacheHandle.get(RedisConstant.STOP_KEY);
+    if (EmptyUtil.isEmpty(stopSet)) {
+      Set<Integer> stopPlanId = new HashSet<>();
+      stopPlanId.add(planEntity.getPlanId());
+      stopCacheHandle.put(RedisConstant.STOP_KEY, stopPlanId);
+    } else {
+      stopSet.add(planEntity.getPlanId());
+    }
+    return true;
+  }
+
+  public boolean removeStop(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
+      return false;
+    }
+    Set<Integer> stopList = stopCacheHandle.get(RedisConstant.STOP_KEY);
+    if (EmptyUtil.isEmpty(stopList)) {
+      return false;
+    } else {
+      return stopList.remove(planEntity.getPlanId());
     }
   }
 }
