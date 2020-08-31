@@ -1,5 +1,6 @@
 package com.huyi.web.handle;
 
+import com.google.common.base.Joiner;
 import com.google.common.util.concurrent.Monitor;
 import com.huyi.common.utils.EmptyUtil;
 import com.huyi.web.constant.RedisConstant;
@@ -31,11 +32,12 @@ public class PlanHandle {
 
   @Autowired private PlanCacheHandle planCacheHandle;
   @Autowired private StopCacheHandle stopCacheHandle;
+  @Autowired private RunningCacheHandle runningCacheHandle;
   @Autowired private TaskCacheHandle taskCacheHandle;
 
   public static ConcurrentHashMap<Integer, List<TaskEntity>> workQueue;
 
-  public static ConcurrentHashMap<Integer, ConcurrentHashMap<Integer, PlanEntity>> planQueue;
+  public static ConcurrentHashMap<Integer, LinkedBlockingQueue<PlanEntity>> planQueue;
 
   @PostConstruct
   public void init() {
@@ -73,16 +75,24 @@ public class PlanHandle {
                     // 空任务，创建
                     if (EmptyUtil.isEmpty(plans)) {
                       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
-                        result.set(queue.add(planEntity));
-                        planCacheHandle.put(key, queue);
-                        msg.append(PlanCode.CREATE_SUCCESS.getMsg());
+                        if (!checkRunning(planEntity) && !checkStop(planEntity)) {
+                          result.set(queue.add(planEntity));
+                          planCacheHandle.put(key, queue);
+                          msg.append(PlanCode.CREATE_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.CREATE_EXIST.getMsg());
+                        }
                       } else {
                         result.set(false);
                         msg.append(PlanCode.CREATE_INVALID.getMsg());
                       }
                     } else {
                       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
-                        if (!plans.contains(planEntity)) {
+                        if (plans.stream()
+                                .noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))
+                            && !checkRunning(planEntity)
+                            && !checkStop(planEntity)) {
                           result.set(plans.add(planEntity));
                           queue =
                               plans.stream()
@@ -98,7 +108,8 @@ public class PlanHandle {
                         }
                       } else if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
                         boolean stop = saveStop(planEntity);
-                        if (stop) {
+                        boolean removeRun = removeRunning(planEntity);
+                        if (stop && removeRun) {
                           result.set(true);
                           msg.append(PlanCode.STOP_SUCCESS.getMsg());
                         } else {
@@ -107,6 +118,7 @@ public class PlanHandle {
                         }
                       } else if (planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
                         boolean remove = removeStop(planEntity);
+                        boolean reRun = saveRunning(planEntity);
                         if (remove) {
                           result.set(true);
                           msg.append(PlanCode.RERUN_SUCCESS.getMsg());
@@ -143,26 +155,145 @@ public class PlanHandle {
     if (!planEntity.getStatus().equals(PlanType.STOP.getCode())) {
       return false;
     }
-    Set<Integer> stopSet = stopCacheHandle.get(RedisConstant.STOP_KEY);
-    if (EmptyUtil.isEmpty(stopSet)) {
-      Set<Integer> stopPlanId = new HashSet<>();
-      stopPlanId.add(planEntity.getPlanId());
-      stopCacheHandle.put(RedisConstant.STOP_KEY, stopPlanId);
-    } else {
-      stopSet.add(planEntity.getPlanId());
-    }
-    return true;
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    stopCacheHandle.tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopSet = stopCacheHandle.get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isEmpty(stopSet)) {
+            Set<Integer> stopPlanId = new HashSet<>();
+            stopPlanId.add(planEntity.getPlanId());
+            stopCacheHandle.put(RedisConstant.STOP_KEY, stopPlanId);
+          } else {
+            stopSet.add(planEntity.getPlanId());
+            stopCacheHandle.put(RedisConstant.STOP_KEY, stopSet);
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
   }
 
   public boolean removeStop(PlanEntity planEntity) {
     if (!planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
       return false;
     }
-    Set<Integer> stopList = stopCacheHandle.get(RedisConstant.STOP_KEY);
-    if (EmptyUtil.isEmpty(stopList)) {
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    stopCacheHandle.tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopList = stopCacheHandle.get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isNotEmpty(stopList)) {
+            stopList.remove(planEntity.getPlanId());
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
+  }
+
+  public boolean checkStop(PlanEntity planEntity) {
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    stopCacheHandle.tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopPlanId = stopCacheHandle.get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isNotEmpty(stopPlanId)) {
+            isOk.set(stopPlanId.contains(planEntity.getPlanId()));
+          }
+        });
+    return isOk.get();
+  }
+
+  public boolean saveRunning(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
       return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    runningCacheHandle.tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningSet = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isEmpty(runningSet)) {
+            Set<PlanEntity> runningPlanId = new HashSet<>();
+            isOk.set(runningPlanId.add(planEntity));
+            runningCacheHandle.put(RedisConstant.RUNNING_KEY, runningPlanId);
+          } else {
+            if (runningSet.stream().noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))) {
+              runningSet.add(planEntity);
+              runningCacheHandle.put(RedisConstant.RUNNING_KEY, runningSet);
+            }
+            isOk.set(true);
+          }
+        });
+    return isOk.get();
+  }
+
+  public boolean removeRunning(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
+      return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    runningCacheHandle.tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningList = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isNotEmpty(runningList)) {
+            boolean remove = false;
+            runningList.removeIf(p -> p.getPlanId().equals(planEntity.getPlanId()));
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
+  }
+
+  public boolean checkRunning(PlanEntity planEntity) {
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    runningCacheHandle.tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningList = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isNotEmpty(runningList)) {
+            isOk.set(
+                runningList.stream().anyMatch(x -> x.getPlanId().equals(planEntity.getPlanId())));
+          }
+        });
+    return isOk.get();
+  }
+
+  public String getPlanQueue() {
+    if (planQueue.size() == 0) {
+      return "";
     } else {
-      return stopList.remove(planEntity.getPlanId());
+      List<String> plans = new ArrayList<>();
+      planQueue.forEach(
+          (k, v) -> {
+            plans.add("userId:" + k + ",plans:{" + v.toString() + "}");
+          });
+      return Joiner.on(";").join(plans);
+    }
+  }
+
+  public String getTaskQueue() {
+    if (workQueue.size() == 0) {
+      return "";
+    } else {
+      List<String> works = new ArrayList<>();
+      workQueue.forEach(
+          (k, v) -> {
+            works.add("planId:" + k + ",works:{" + v.toString() + "}");
+          });
+      return Joiner.on(";").join(works);
     }
   }
 }

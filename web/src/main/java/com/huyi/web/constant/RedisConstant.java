@@ -13,4 +13,8 @@ public class RedisConstant {
   public static final String STOP_PREFIX = "stop-planId-";
   /** 暂停任务关键字 */
   public static final String STOP_KEY = "stopList";
+  /** 运行或者准备中任务前缀 */
+  public static final String RUNNING_PREFIX = "running-planId-";
+  /** 运行或者准备中任务关键字 */
+  public static final String RUNNING_KEY = "runningList";
 }

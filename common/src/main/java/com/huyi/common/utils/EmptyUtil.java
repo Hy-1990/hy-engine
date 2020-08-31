@@ -2,6 +2,7 @@ package com.huyi.common.utils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class EmptyUtil {
 
@@ -51,5 +52,13 @@ public class EmptyUtil {
 
   public static boolean isNotEmpty(Map<?, ?> map) {
     return (map != null && map.size() > 0);
+  }
+
+  public static boolean isEmpty(Set<?> set) {
+    return (set == null || set.size() == 0);
+  }
+
+  public static boolean isNotEmpty(Set<?> set) {
+    return (set != null && set.size() > 0);
   }
 }

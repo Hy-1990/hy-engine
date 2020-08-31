@@ -5,13 +5,10 @@ import com.alicp.jetcache.Cache;
 import com.alicp.jetcache.anno.CacheType;
 import com.alicp.jetcache.anno.CreateCache;
 import com.huyi.web.constant.RedisConstant;
-import com.huyi.web.entity.PlanEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -61,5 +58,12 @@ public class StopCacheHandle {
 
   public boolean tryLockAndRun(String key, long expire, TimeUnit timeUnit, Runnable runnable) {
     return stopLock.tryLockAndRun(key, expire, timeUnit, runnable);
+  }
+
+  public String getReport() {
+    if (stopCache.get(RedisConstant.STOP_KEY) == null) {
+      return "";
+    }
+    return stopCache.get(RedisConstant.STOP_KEY).toString();
   }
 }
