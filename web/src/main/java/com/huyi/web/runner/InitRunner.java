@@ -30,5 +30,6 @@ public class InitRunner implements ApplicationRunner {
     ThreadPoolConfig.inputPool.scheduleAtFixedRate(
         new InputWorker(planCacheHandle, redisUtil, planHandle), 0, 15, TimeUnit.SECONDS);
     logger.info("HY-推送引擎启动！");
+    TimeUnit.SECONDS.sleep(15 );
   }
 }

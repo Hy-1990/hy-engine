@@ -17,6 +17,7 @@ public class TaskEntity implements Serializable {
 
   private Integer planId;
   private Integer status;
+  private Integer taskId;
 
   private Long amount;
   private String param;

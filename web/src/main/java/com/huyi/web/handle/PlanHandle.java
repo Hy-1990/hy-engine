@@ -33,7 +33,6 @@ public class PlanHandle {
   @Autowired private PlanCacheHandle planCacheHandle;
   @Autowired private StopCacheHandle stopCacheHandle;
   @Autowired private RunningCacheHandle runningCacheHandle;
-  @Autowired private TaskCacheHandle taskCacheHandle;
 
   public static ConcurrentHashMap<Integer, List<TaskEntity>> workQueue;
 
@@ -283,6 +282,8 @@ public class PlanHandle {
       return Joiner.on(";").join(plans);
     }
   }
+
+
 
   public String getTaskQueue() {
     if (workQueue.size() == 0) {

@@ -4,16 +4,18 @@ import com.alicp.jetcache.AutoReleaseLock;
 import com.alicp.jetcache.Cache;
 import com.alicp.jetcache.anno.CacheType;
 import com.alicp.jetcache.anno.CreateCache;
+import com.google.common.base.Joiner;
+import com.huyi.common.utils.RedisUtil;
 import com.huyi.web.constant.RedisConstant;
+import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.entity.TaskEntity;
 import com.huyi.web.enums.CacheHyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /** @Author huyi @Date 2020/8/27 17:22 @Description: */
@@ -21,96 +23,58 @@ import java.util.concurrent.TimeUnit;
 public class TaskCacheHandle {
   private final Logger log = LoggerFactory.getLogger(this.getClass());
 
-  @CreateCache(name = RedisConstant.REAL_TASK_PREFIX, cacheType = CacheType.REMOTE)
+  @CreateCache(name = RedisConstant.TASK_PREFIX, cacheType = CacheType.REMOTE)
   public Cache<String, List<TaskEntity>> taskCache;
 
-  @CreateCache(
-      name = RedisConstant.TMP_TASK_PREFIX,
-      cacheType = CacheType.REMOTE,
-      expire = 30,
-      timeUnit = TimeUnit.MINUTES)
-  public Cache<String, List<TaskEntity>> tempCache;
+  @Autowired private RedisUtil redisUtil;
 
   /** 分布式锁 */
   @CreateCache(cacheType = CacheType.REMOTE)
   public Cache<String, String> taskLock;
 
-  @CreateCache(cacheType = CacheType.REMOTE)
-  public Cache<String, String> tempLock;
+  public List<TaskEntity> get(String key) {
+    return taskCache.get(key);
+  }
 
-  public List<TaskEntity> get(CacheHyType cacheHyType, String key) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      return taskCache.get(key);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      return tempCache.get(key);
+  public Map<String, List<TaskEntity>> getAll(Set<String> keys) {
+    return taskCache.getAll(keys);
+  }
+
+  public void put(String key, List<TaskEntity> queue) {
+    taskCache.put(key, queue);
+  }
+
+  public void putAll(Map<String, List<TaskEntity>> map) {
+    taskCache.putAll(map);
+  }
+
+  public boolean remove(String key) {
+    return taskCache.remove(key);
+  }
+
+  public void removeAll(Set<String> keys) {
+    taskCache.removeAll(keys);
+  }
+
+  public AutoReleaseLock tryLock(String key, long expire, TimeUnit timeUtil) {
+    return taskCache.tryLock(key, expire, timeUtil);
+  }
+
+  public boolean tryLockAndRun(String key, long expire, TimeUnit timeUnit, Runnable runnable) {
+    return taskCache.tryLockAndRun(key, expire, timeUnit, runnable);
+  }
+
+  public String getCacheReport() {
+    Set<String> keys = redisUtil.getAllKeyMatch(RedisConstant.TASK_PREFIX);
+    if (keys.size() == 0) {
+      return "";
     } else {
-      return null;
-    }
-  }
-
-  public Map<String, List<TaskEntity>> getAll(CacheHyType cacheHyType, Set<String> keys) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      return taskCache.getAll(keys);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      return tempCache.getAll(keys);
-    } else {
-      return null;
-    }
-  }
-
-  public void put(CacheHyType cacheHyType, String key, List<TaskEntity> queue) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      taskCache.put(key, queue);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      tempCache.put(key, queue);
-    }
-  }
-
-  public void putAll(CacheHyType cacheHyType, Map<String, List<TaskEntity>> map) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      taskCache.putAll(map);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      tempCache.putAll(map);
-    }
-  }
-
-  public boolean remove(CacheHyType cacheHyType, String key) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      return taskCache.remove(key);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      return tempCache.remove(key);
-    } else {
-      return false;
-    }
-  }
-
-  public void removeAll(CacheHyType cacheHyType, Set<String> keys) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      taskCache.removeAll(keys);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      tempCache.removeAll(keys);
-    }
-  }
-
-  public AutoReleaseLock tryLock(
-      CacheHyType cacheHyType, String key, long expire, TimeUnit timeUtil) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      return taskCache.tryLock(key, expire, timeUtil);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      return tempCache.tryLock(key, expire, timeUtil);
-    } else {
-      return null;
-    }
-  }
-
-  public boolean tryLockAndRun(
-      CacheHyType cacheHyType, String key, long expire, TimeUnit timeUnit, Runnable runnable) {
-    if (cacheHyType.equals(CacheHyType.REAL_TASK)) {
-      return taskCache.tryLockAndRun(key, expire, timeUnit, runnable);
-    } else if (cacheHyType.equals(CacheHyType.TEMP_TASK)) {
-      return tempCache.tryLockAndRun(key, expire, timeUnit, runnable);
-    } else {
-      return false;
+      List<String> reports = new ArrayList<>();
+      keys.forEach(
+          (x) -> {
+            reports.add("planId:" + x.split("-")[2] + ",tasks:{" + get(x.split("-")[2]) + "}");
+          });
+      return Joiner.on(";").join(reports);
     }
   }
 }

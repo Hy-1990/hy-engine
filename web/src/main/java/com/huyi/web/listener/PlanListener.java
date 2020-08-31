@@ -27,7 +27,6 @@ public class PlanListener {
   @RabbitListener(queues = RabbitMqConfig.PLAN_QUEUE, containerFactory = "planMqRabbitFactory")
   @RabbitHandler
   public void process(String message) {
-    logger.info("*********************** " + message + " ***********************");
     PlanEntity planEntity = JsonUtils.json2Bean(message, PlanEntity.class);
     EXECUTOR_SERVICE.execute(
         () -> {

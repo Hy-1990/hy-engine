@@ -4,10 +4,12 @@ package com.huyi.web.enums;
 public enum TaskType {
   // 运行中
   RUNNING(0),
+  // 暂停中
+  STOP(1),
   // 异常
   EXCEPTION(9999),
   // 已完成
-  FINISHED(1);
+  FINISHED(2);
 
   private final Integer code;
 
