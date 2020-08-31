@@ -17,8 +17,8 @@ import java.util.concurrent.TimeUnit;
 
 /** @Author huyi @Date 2020/8/27 10:32 @Description: 监视器 */
 @Component
-@Order(1)
-public class MonitorRunner implements ApplicationRunner {
+@Order(2)
+public class InitRunner implements ApplicationRunner {
 
   private final Logger logger = LoggerFactory.getLogger(this.getClass());
   @Autowired private PlanCacheHandle planCacheHandle;
@@ -29,5 +29,6 @@ public class MonitorRunner implements ApplicationRunner {
   public void run(ApplicationArguments args) throws Exception {
     ThreadPoolConfig.inputPool.scheduleAtFixedRate(
         new InputWorker(planCacheHandle, redisUtil, planHandle), 0, 15, TimeUnit.SECONDS);
+    logger.info("HY-推送引擎启动！");
   }
 }

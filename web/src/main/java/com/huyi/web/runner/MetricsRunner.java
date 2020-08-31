@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 /** @Author huyi @Date 2020/8/31 9:02 @Description: 指标表 */
 @Component
-@Order(2)
+@Order(1)
 public class MetricsRunner implements ApplicationRunner {
   private final Logger logger = LoggerFactory.getLogger(this.getClass());
   @Autowired private PlanCacheHandle planCacheHandle;
@@ -65,5 +65,6 @@ public class MetricsRunner implements ApplicationRunner {
     REGISTRY.gauge("HY-METRICS", () -> HEALTH_CHECK_REGISTRY::runHealthChecks);
 
     REPORTER.start(10, TimeUnit.SECONDS);
+
   }
 }
