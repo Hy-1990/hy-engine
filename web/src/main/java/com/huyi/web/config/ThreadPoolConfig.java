@@ -18,4 +18,7 @@ public class ThreadPoolConfig {
   /** 核心计划池 */
   public static final ExecutorService captainPool =
       Executors.newFixedThreadPool(500, new CustomizableThreadFactory("CaptainThread-"));
+  /** 常规工作池 */
+  public static final ExecutorService crewPool =
+      Executors.newFixedThreadPool(2000, new CustomizableThreadFactory("CrewThread-"));
 }

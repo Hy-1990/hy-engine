@@ -25,7 +25,9 @@ public class TaskHandle {
   private static Monitor monitor = new Monitor();
 
   public void dispatch(TaskEntity taskEntity) {
-    if (EmptyUtil.isEmpty(taskEntity) || EmptyUtil.isEmpty(taskEntity.getPlanId())) {
+    if (EmptyUtil.isEmpty(taskEntity)
+        || EmptyUtil.isEmpty(taskEntity.getPlanId())
+        || EmptyUtil.isEmpty(taskEntity.getTaskId())) {
       return;
     }
     if (EmptyUtil.isEmpty(taskEntity.getAmount())) {
@@ -63,7 +65,7 @@ public class TaskHandle {
                       }
                     }
                   });
-          if (hasRun){
+          if (hasRun) {
             break;
           }
         } finally {
