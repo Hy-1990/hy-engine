@@ -5,9 +5,9 @@ public enum PlanType {
   // 准备中
   READY(0),
   // 运行中
-  RUNNING(1),
+  RUNNING(2),
   // 暂停中
-  STOP(2),
+  STOP(1),
   // 已完成
   FINISHED(9);
 

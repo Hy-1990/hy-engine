@@ -1,8 +1,8 @@
 package com.huyi.web.config;
 
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
-import org.springframework.stereotype.Component;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -14,4 +14,8 @@ public class ThreadPoolConfig {
   /** 推送数据池 */
   public static final ScheduledExecutorService inputPool =
       Executors.newScheduledThreadPool(1, new CustomizableThreadFactory("InputThread-"));
+
+  /** 核心计划池 */
+  public static final ExecutorService captainPool =
+      Executors.newFixedThreadPool(500, new CustomizableThreadFactory("CaptainThread-"));
 }

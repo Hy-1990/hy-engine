@@ -2,11 +2,9 @@ package com.huyi.web.handle;
 
 import com.google.common.util.concurrent.Monitor;
 import com.huyi.common.utils.EmptyUtil;
-import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.entity.TaskEntity;
 import com.huyi.web.enums.TaskCode;
 import com.huyi.web.enums.TaskType;
-import javafx.concurrent.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +63,9 @@ public class TaskHandle {
                       }
                     }
                   });
+          if (hasRun){
+            break;
+          }
         } finally {
           monitor.leave();
           reTry.incrementAndGet();

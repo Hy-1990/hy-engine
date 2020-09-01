@@ -5,10 +5,7 @@ import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.health.HealthCheckRegistry;
 import com.codahale.metrics.health.jvm.ThreadDeadlockHealthCheck;
-import com.huyi.web.handle.PlanCacheHandle;
-import com.huyi.web.handle.PlanHandle;
-import com.huyi.web.handle.RunningCacheHandle;
-import com.huyi.web.handle.StopCacheHandle;
+import com.huyi.web.handle.*;
 import com.huyi.web.workers.InputWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +26,7 @@ public class MetricsRunner implements ApplicationRunner {
   @Autowired private PlanHandle planHandlel;
   @Autowired private StopCacheHandle stopCacheHandle;
   @Autowired private RunningCacheHandle runningCacheHandle;
+  @Autowired private TaskCacheHandle taskCacheHandle;
 
   private static final MetricRegistry REGISTRY = new MetricRegistry();
 
@@ -46,11 +44,14 @@ public class MetricsRunner implements ApplicationRunner {
         MetricRegistry.name(PlanHandle.class, "PlanQueue"),
         (Gauge<String>) planHandlel::getPlanQueue);
     REGISTRY.register(
-        MetricRegistry.name(PlanHandle.class, "workQueue"),
+        MetricRegistry.name(PlanHandle.class, "WorkQueue"),
         (Gauge<String>) planHandlel::getTaskQueue);
     REGISTRY.register(
         MetricRegistry.name(PlanCacheHandle.class, "PlanCache"),
         (Gauge<String>) planCacheHandle::getCacheReport);
+    REGISTRY.register(
+        MetricRegistry.name(TaskCacheHandle.class, "TaskCache"),
+        (Gauge<String>) taskCacheHandle::getCacheReport);
     REGISTRY.register(
         MetricRegistry.name(StopCacheHandle.class, "StopCache"),
         (Gauge<String>) stopCacheHandle::getReport);
@@ -65,6 +66,5 @@ public class MetricsRunner implements ApplicationRunner {
     REGISTRY.gauge("HY-METRICS", () -> HEALTH_CHECK_REGISTRY::runHealthChecks);
 
     REPORTER.start(10, TimeUnit.SECONDS);
-
   }
 }

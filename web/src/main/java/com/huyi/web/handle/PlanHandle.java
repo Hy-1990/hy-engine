@@ -16,10 +16,11 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
 
 /** @Author huyi @Date 2020/8/26 21:52 @Description: 计划控制类 */
@@ -36,12 +37,18 @@ public class PlanHandle {
 
   public static ConcurrentHashMap<Integer, List<TaskEntity>> workQueue;
 
-  public static ConcurrentHashMap<Integer, LinkedBlockingQueue<PlanEntity>> planQueue;
+  public static ConcurrentHashMap<Integer, LinkedList<PlanEntity>> planQueue;
+
+  public static StampedLock workLock;
+
+  public static StampedLock planLock;
 
   @PostConstruct
   public void init() {
     workQueue = new ConcurrentHashMap<>();
     planQueue = new ConcurrentHashMap<>();
+    workLock = new StampedLock();
+    planLock = new StampedLock();
   }
 
   public void dispatch(PlanEntity planEntity) {
@@ -87,6 +94,7 @@ public class PlanHandle {
                         msg.append(PlanCode.CREATE_INVALID.getMsg());
                       }
                     } else {
+                      // 创建新任务
                       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
                         if (plans.stream()
                                 .noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))
@@ -105,6 +113,7 @@ public class PlanHandle {
                           result.set(false);
                           msg.append(PlanCode.CREATE_EXIST.getMsg());
                         }
+                        // 暂停任务保存进暂停队列，从运行队列排除
                       } else if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
                         boolean stop = saveStop(planEntity);
                         boolean removeRun = removeRunning(planEntity);
@@ -115,10 +124,11 @@ public class PlanHandle {
                           result.set(false);
                           msg.append(PlanCode.STOP_FAILED.getMsg());
                         }
+                        // 恢复暂停任务，从暂停队列排除，添加进运行队列
                       } else if (planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
                         boolean remove = removeStop(planEntity);
                         boolean reRun = saveRunning(planEntity);
-                        if (remove) {
+                        if (remove && reRun) {
                           result.set(true);
                           msg.append(PlanCode.RERUN_SUCCESS.getMsg());
                         } else {
@@ -283,8 +293,6 @@ public class PlanHandle {
     }
   }
 
-
-
   public String getTaskQueue() {
     if (workQueue.size() == 0) {
       return "";
@@ -296,5 +304,30 @@ public class PlanHandle {
           });
       return Joiner.on(";").join(works);
     }
+  }
+
+  public PlanEntity findPlan() {
+    AtomicReference<PlanEntity> result = new AtomicReference<PlanEntity>();
+    for (Map.Entry<Integer, LinkedList<PlanEntity>> entry : planQueue.entrySet()) {
+      LinkedList<PlanEntity> plans = entry.getValue();
+      Optional<PlanEntity> plan =
+          plans.stream()
+              .filter(
+                  p ->
+                      p.getStatus().equals(PlanType.READY.getCode())
+                          || p.getStatus().equals(PlanType.STOP.getCode()))
+              .filter(
+                  y ->
+                      runningCacheHandle.get(RedisConstant.RUNNING_KEY).stream()
+                              .anyMatch(x -> x.getPlanId().equals(y.getPlanId()))
+                          && stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
+                              .noneMatch(z -> y.getPlanId().equals(z)))
+              .findFirst();
+      if (plan.isPresent()) {
+        result.set(plan.get());
+        break;
+      }
+    }
+    return result.get();
   }
 }

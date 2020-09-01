@@ -7,15 +7,16 @@ import com.alicp.jetcache.anno.CreateCache;
 import com.google.common.base.Joiner;
 import com.huyi.common.utils.RedisUtil;
 import com.huyi.web.constant.RedisConstant;
-import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.entity.TaskEntity;
-import com.huyi.web.enums.CacheHyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** @Author huyi @Date 2020/8/27 17:22 @Description: */
@@ -57,11 +58,11 @@ public class TaskCacheHandle {
   }
 
   public AutoReleaseLock tryLock(String key, long expire, TimeUnit timeUtil) {
-    return taskCache.tryLock(key, expire, timeUtil);
+    return taskLock.tryLock(key, expire, timeUtil);
   }
 
   public boolean tryLockAndRun(String key, long expire, TimeUnit timeUnit, Runnable runnable) {
-    return taskCache.tryLockAndRun(key, expire, timeUnit, runnable);
+    return taskLock.tryLockAndRun(key, expire, timeUnit, runnable);
   }
 
   public String getCacheReport() {

@@ -21,4 +21,5 @@ public class PlanEntity implements Serializable {
   private Integer status;
   private String msg;
   private Long planTime;
+  private Integer taskAmount;
 }

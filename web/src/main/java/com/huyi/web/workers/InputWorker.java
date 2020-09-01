@@ -16,7 +16,6 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -32,8 +31,8 @@ public class InputWorker extends HealthCheck implements Runnable {
   private PlanCacheHandle planCacheHandle;
   private RedisUtil redisUtil;
   private PlanHandle planHandle;
-  private static final AtomicInteger failCount = new AtomicInteger(0);
-  private static final ConcurrentSkipListSet<String> failReport = new ConcurrentSkipListSet<>();
+  private static final AtomicInteger FAIL_COUNT = new AtomicInteger(0);
+  private static final ConcurrentSkipListSet<String> FAIL_REPORT = new ConcurrentSkipListSet<>();
 
   public InputWorker(PlanCacheHandle planCacheHandle, RedisUtil redisUtil, PlanHandle planHandle) {
     this.planCacheHandle = planCacheHandle;
@@ -61,36 +60,41 @@ public class InputWorker extends HealthCheck implements Runnable {
                         .findFirst();
                 newPlan.ifPresent(
                     p -> {
-                      if (!PlanHandle.planQueue.containsKey(p.getUserId())) {
-                        PlanHandle.planQueue.put(
-                            p.getUserId(),
-                            new LinkedBlockingQueue<>(
-                                new LinkedBlockingQueue<>(Collections.singletonList(p))));
-                        PlanHandle.workQueue.put(p.getPlanId(), new ArrayList<>());
-                        plans.remove(p);
-                        planCacheHandle.put(key.split("-")[2], plans);
-                        planHandle.saveRunning(p);
-                        hasPoll.set(true);
-                      } else {
-                        LinkedBlockingQueue<PlanEntity> localPlans =
-                            PlanHandle.planQueue.get(p.getUserId());
-                        if (localPlans.contains(p)) {
-                          hasPoll.set(false);
-                        } else {
-                          localPlans.offer(p);
-                          localPlans =
-                              localPlans.stream()
-                                  .sorted(Comparator.comparing(PlanEntity::getPlanTime))
-                                  .sorted(Comparator.comparing(PlanEntity::getLevel).reversed())
-                                  .sorted(Comparator.comparing(PlanEntity::getStatus))
-                                  .collect(Collectors.toCollection(LinkedBlockingQueue::new));
-                          PlanHandle.planQueue.put(p.getUserId(), localPlans);
+                      long workStamped = PlanHandle.workLock.writeLock();
+                      long planStamped = PlanHandle.planLock.writeLock();
+                      try {
+                        if (!PlanHandle.planQueue.containsKey(p.getUserId())) {
+                          PlanHandle.planQueue.put(
+                              p.getUserId(), new LinkedList<>(Collections.singletonList(p)));
                           PlanHandle.workQueue.put(p.getPlanId(), new ArrayList<>());
                           plans.remove(p);
                           planCacheHandle.put(key.split("-")[2], plans);
                           planHandle.saveRunning(p);
                           hasPoll.set(true);
+                        } else {
+                          LinkedList<PlanEntity> localPlans =
+                              PlanHandle.planQueue.get(p.getUserId());
+                          if (localPlans.contains(p)) {
+                            hasPoll.set(false);
+                          } else {
+                            localPlans.add(p);
+                            localPlans =
+                                localPlans.stream()
+                                    .sorted(Comparator.comparing(PlanEntity::getPlanTime))
+                                    .sorted(Comparator.comparing(PlanEntity::getLevel).reversed())
+                                    .sorted(Comparator.comparing(PlanEntity::getStatus))
+                                    .collect(Collectors.toCollection(LinkedList::new));
+                            PlanHandle.planQueue.put(p.getUserId(), localPlans);
+                            PlanHandle.workQueue.put(p.getPlanId(), new ArrayList<>());
+                            plans.remove(p);
+                            planCacheHandle.put(key.split("-")[2], plans);
+                            planHandle.saveRunning(p);
+                            hasPoll.set(true);
+                          }
                         }
+                      } finally {
+                        PlanHandle.workLock.unlockWrite(workStamped);
+                        PlanHandle.planLock.unlockWrite(planStamped);
                       }
                     });
               }
@@ -107,15 +111,15 @@ public class InputWorker extends HealthCheck implements Runnable {
         logger.info("无可推送的数据！");
       }
     } catch (Exception e) {
-      failReport.add(e.getMessage());
+      FAIL_REPORT.add(e.getMessage());
     }
   }
 
   @Override
   protected Result check() throws Exception {
-    if (failCount.get() > 0) {
+    if (FAIL_COUNT.get() > 0) {
       return Result.unhealthy(
-          "失败次数：" + failCount.get() + " 失败消息：" + Joiner.on(",").join(failReport));
+          "失败次数：" + FAIL_COUNT.get() + " 失败消息：" + Joiner.on(",").join(FAIL_REPORT));
     } else {
       return Result.healthy();
     }

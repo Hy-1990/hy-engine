@@ -19,7 +19,8 @@ public class TaskServiceImpl implements TaskService {
 
   @Override
   public boolean saveTask(TaskEntity entity) {
-    String key = RedisConstant.REAL_TASK_PREFIX + entity.getPlanId();
-    return cacheHandle.computeIfAbsent(CacheHyType.REAL_TASK, key, entity);
+//    String key = RedisConstant.REAL_TASK_PREFIX + entity.getPlanId();
+//    return cacheHandle.computeIfAbsent(CacheHyType.REAL_TASK, key, entity);
+    return false;
   }
 }
