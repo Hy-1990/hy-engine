@@ -88,7 +88,8 @@ public class PlanHandle {
                     // 空任务，创建
                     if (EmptyUtil.isEmpty(plans)) {
                       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
-                        if (!checkRunning(planEntity) && !checkStop(planEntity)) {
+                        if (!runningCacheHandle.checkRunning(planEntity)
+                            && !stopCacheHandle.checkStop(planEntity)) {
                           result.set(queue.add(planEntity));
                           planCacheHandle.put(key, queue);
                           msg.append(PlanCode.CREATE_SUCCESS.getMsg());
@@ -105,8 +106,8 @@ public class PlanHandle {
                       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
                         if (plans.stream()
                                 .noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))
-                            && !checkRunning(planEntity)
-                            && !checkStop(planEntity)) {
+                            && !runningCacheHandle.checkRunning(planEntity)
+                            && !stopCacheHandle.checkStop(planEntity)) {
                           result.set(plans.add(planEntity));
                           queue =
                               plans.stream()
@@ -122,8 +123,8 @@ public class PlanHandle {
                         }
                         // 暂停任务保存进暂停队列，从运行队列排除
                       } else if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
-                        boolean stop = saveStop(planEntity);
-                        boolean removeRun = removeRunning(planEntity);
+                        boolean stop = stopCacheHandle.saveStop(planEntity);
+                        boolean removeRun = runningCacheHandle.removeRunning(planEntity);
                         if (stop && removeRun) {
                           result.set(true);
                           msg.append(PlanCode.STOP_SUCCESS.getMsg());
@@ -133,8 +134,8 @@ public class PlanHandle {
                         }
                         // 恢复暂停任务，从暂停队列排除，添加进运行队列
                       } else if (planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
-                        boolean remove = removeStop(planEntity);
-                        boolean reRun = saveRunning(planEntity);
+                        boolean remove = stopCacheHandle.removeStop(planEntity);
+                        boolean reRun = runningCacheHandle.saveRunning(planEntity);
                         if (remove && reRun) {
                           result.set(true);
                           msg.append(PlanCode.RERUN_SUCCESS.getMsg());
@@ -167,124 +168,31 @@ public class PlanHandle {
     }
   }
 
-  public boolean saveStop(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.STOP.getCode())) {
-      return false;
+  public void savePlan(Integer userId, LinkedList<PlanEntity> plans) {
+    long stamped = planLock.writeLock();
+    try {
+      planQueue.put(userId, plans);
+    } finally {
+      planLock.unlockWrite(stamped);
     }
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    stopCacheHandle.tryLockAndRun(
-        RedisConstant.STOP_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<Integer> stopSet = stopCacheHandle.get(RedisConstant.STOP_KEY);
-          if (EmptyUtil.isEmpty(stopSet)) {
-            Set<Integer> stopPlanId = new HashSet<>();
-            stopPlanId.add(planEntity.getPlanId());
-            stopCacheHandle.put(RedisConstant.STOP_KEY, stopPlanId);
-          } else {
-            stopSet.add(planEntity.getPlanId());
-            stopCacheHandle.put(RedisConstant.STOP_KEY, stopSet);
-          }
-          isOk.set(true);
-        });
-    return isOk.get();
   }
 
-  public boolean removeStop(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
-      return false;
+  public LinkedList<PlanEntity> getPlan(Integer userId) {
+    long stamped = planLock.readLock();
+    try {
+      return planQueue.get(userId);
+    } finally {
+      planLock.unlockRead(stamped);
     }
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    stopCacheHandle.tryLockAndRun(
-        RedisConstant.STOP_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<Integer> stopList = stopCacheHandle.get(RedisConstant.STOP_KEY);
-          if (EmptyUtil.isNotEmpty(stopList)) {
-            stopList.remove(planEntity.getPlanId());
-          }
-          isOk.set(true);
-        });
-    return isOk.get();
   }
 
-  public boolean checkStop(PlanEntity planEntity) {
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    stopCacheHandle.tryLockAndRun(
-        RedisConstant.STOP_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<Integer> stopPlanId = stopCacheHandle.get(RedisConstant.STOP_KEY);
-          if (EmptyUtil.isNotEmpty(stopPlanId)) {
-            isOk.set(stopPlanId.contains(planEntity.getPlanId()));
-          }
-        });
-    return isOk.get();
-  }
-
-  public boolean saveRunning(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
-      return false;
+  public void removePlan(Integer userId) {
+    long stamped = planLock.writeLock();
+    try {
+      planQueue.remove(userId);
+    } finally {
+      planLock.unlockWrite(stamped);
     }
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    runningCacheHandle.tryLockAndRun(
-        RedisConstant.RUNNING_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<PlanEntity> runningSet = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
-          if (EmptyUtil.isEmpty(runningSet)) {
-            Set<PlanEntity> runningPlanId = new HashSet<>();
-            isOk.set(runningPlanId.add(planEntity));
-            runningCacheHandle.put(RedisConstant.RUNNING_KEY, runningPlanId);
-          } else {
-            if (runningSet.stream().noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))) {
-              runningSet.add(planEntity);
-              runningCacheHandle.put(RedisConstant.RUNNING_KEY, runningSet);
-            }
-            isOk.set(true);
-          }
-        });
-    return isOk.get();
-  }
-
-  public boolean removeRunning(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
-      return false;
-    }
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    runningCacheHandle.tryLockAndRun(
-        RedisConstant.RUNNING_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<PlanEntity> runningList = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
-          if (EmptyUtil.isNotEmpty(runningList)) {
-            boolean remove = false;
-            runningList.removeIf(p -> p.getPlanId().equals(planEntity.getPlanId()));
-          }
-          isOk.set(true);
-        });
-    return isOk.get();
-  }
-
-  public boolean checkRunning(PlanEntity planEntity) {
-    AtomicBoolean isOk = new AtomicBoolean(false);
-    runningCacheHandle.tryLockAndRun(
-        RedisConstant.RUNNING_KEY,
-        3,
-        TimeUnit.SECONDS,
-        () -> {
-          Set<PlanEntity> runningList = runningCacheHandle.get(RedisConstant.RUNNING_KEY);
-          if (EmptyUtil.isNotEmpty(runningList)) {
-            isOk.set(
-                runningList.stream().anyMatch(x -> x.getPlanId().equals(planEntity.getPlanId())));
-          }
-        });
-    return isOk.get();
   }
 
   public boolean changePlanStatus(PlanEntity planEntity, PlanType planType) {
@@ -323,12 +231,48 @@ public class PlanHandle {
     }
   }
 
+  public void removeReport(Integer planId) {
+    long stamped = reportLock.writeLock();
+    try {
+      reportQueue.remove(planId);
+    } finally {
+      reportLock.unlockWrite(stamped);
+    }
+  }
+
   public List<ReportEntity> getReport(Integer planId) {
     long stamped = reportLock.readLock();
     try {
       return reportQueue.get(planId);
     } finally {
       reportLock.unlockRead(stamped);
+    }
+  }
+
+  public void removeWorkQueue(Integer planId) {
+    long stamped = workLock.writeLock();
+    try {
+      workQueue.remove(planId);
+    } finally {
+      workLock.unlockWrite(stamped);
+    }
+  }
+
+  public void saveWorkQueue(Integer planId, List<TaskEntity> tasks) {
+    long stamped = workLock.writeLock();
+    try {
+      workQueue.put(planId, tasks);
+    } finally {
+      workLock.unlockWrite(stamped);
+    }
+  }
+
+  public List<TaskEntity> getWorkQueue(Integer planId) {
+    long stamped = workLock.readLock();
+    try {
+      return workQueue.get(planId);
+    } finally {
+      workLock.unlockRead(stamped);
     }
   }
 

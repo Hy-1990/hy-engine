@@ -4,6 +4,7 @@ import com.huyi.common.utils.RedisUtil;
 import com.huyi.web.config.ThreadPoolConfig;
 import com.huyi.web.handle.PlanCacheHandle;
 import com.huyi.web.handle.PlanHandle;
+import com.huyi.web.handle.RunningCacheHandle;
 import com.huyi.web.workers.InputWorker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,12 +25,16 @@ public class InitRunner implements ApplicationRunner {
   @Autowired private PlanCacheHandle planCacheHandle;
   @Autowired private RedisUtil redisUtil;
   @Autowired private PlanHandle planHandle;
+  @Autowired private RunningCacheHandle runningCacheHandle;
 
   @Override
   public void run(ApplicationArguments args) throws Exception {
     ThreadPoolConfig.inputPool.scheduleAtFixedRate(
-        new InputWorker(planCacheHandle, redisUtil, planHandle), 0, 15, TimeUnit.SECONDS);
+        new InputWorker(planCacheHandle, redisUtil, planHandle, runningCacheHandle),
+        0,
+        15,
+        TimeUnit.SECONDS);
     logger.info("HY-推送引擎启动！");
-    TimeUnit.SECONDS.sleep(15 );
+    TimeUnit.SECONDS.sleep(15);
   }
 }

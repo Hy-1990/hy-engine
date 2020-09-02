@@ -75,14 +75,12 @@ public class CrewWorker extends HealthCheck implements Runnable {
       if (ready) {
         try {
           List<TaskEntity> tasks;
-          long workStamped = PlanHandle.workLock.writeLock();
-          PlanHandle.workQueue.put(
+          planHandle.saveWorkQueue(
               planEntity.getPlanId(),
               taskCacheHandle.get(planEntity.getPlanId() + "").stream()
                   .limit(planEntity.getTaskAmount())
                   .collect(Collectors.toList()));
-          tasks = PlanHandle.workQueue.get(planEntity.getPlanId());
-          PlanHandle.workLock.unlockWrite(workStamped);
+          tasks = planHandle.getWorkQueue(planEntity.getPlanId());
 
           // 开始批量完成任务
           RateLimiter rateLimiter = RateLimiter.create(Double.valueOf(planEntity.getRobotSize()));
@@ -117,10 +115,16 @@ public class CrewWorker extends HealthCheck implements Runnable {
               });
 
           if (ifStop) {
+            // 如果被暂停，则存回结果队列，修改计划为暂停状态
             planHandle.saveReport(planEntity.getPlanId(), reports);
             planHandle.changePlanStatus(planEntity, PlanType.STOP);
           } else {
-            if (reports.size() == tasks.size()) {}
+            // 如果成功，则存到结果报告队列，修改计划为完成状态，删除运行内存中的计划
+            reportHandle.saveReport(planEntity.getPlanId(), reports);
+            runningCacheHandle.removeRunning(planEntity);
+            planHandle.changePlanStatus(planEntity, PlanType.FINISHED);
+            planHandle.removeWorkQueue(planEntity.getPlanId());
+            taskCacheHandle.remove(planEntity.getPlanId() + "");
           }
 
         } catch (Exception e) {

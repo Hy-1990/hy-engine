@@ -5,15 +5,19 @@ import com.alicp.jetcache.Cache;
 import com.alicp.jetcache.anno.CacheType;
 import com.alicp.jetcache.anno.CreateCache;
 import com.google.common.base.Joiner;
+import com.huyi.common.utils.EmptyUtil;
 import com.huyi.web.constant.RedisConstant;
 import com.huyi.web.entity.PlanEntity;
+import com.huyi.web.enums.PlanType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** @Author huyi @Date 2020/8/31 10:51 @Description: 运行队列缓存 */
 @Component
@@ -59,8 +63,70 @@ public class RunningCacheHandle {
     return runningLock.tryLockAndRun(key, expire, timeUnit, runnable);
   }
 
+  public boolean removeRunning(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
+      return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningList = get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isNotEmpty(runningList)) {
+            boolean remove = false;
+            runningList.removeIf(p -> p.getPlanId().equals(planEntity.getPlanId()));
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
+  }
+
+  public boolean checkRunning(PlanEntity planEntity) {
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningList = get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isNotEmpty(runningList)) {
+            isOk.set(
+                runningList.stream().anyMatch(x -> x.getPlanId().equals(planEntity.getPlanId())));
+          }
+        });
+    return isOk.get();
+  }
+
+  public boolean saveRunning(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
+      return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.RUNNING_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<PlanEntity> runningSet = get(RedisConstant.RUNNING_KEY);
+          if (EmptyUtil.isEmpty(runningSet)) {
+            Set<PlanEntity> runningPlanId = new HashSet<>();
+            isOk.set(runningPlanId.add(planEntity));
+            put(RedisConstant.RUNNING_KEY, runningPlanId);
+          } else {
+            if (runningSet.stream().noneMatch(p -> p.getPlanId().equals(planEntity.getPlanId()))) {
+              runningSet.add(planEntity);
+              put(RedisConstant.RUNNING_KEY, runningSet);
+            }
+            isOk.set(true);
+          }
+        });
+    return isOk.get();
+  }
+
   public String getReport() {
-    if (runningCache.get(RedisConstant.RUNNING_KEY) == null){
+    if (runningCache.get(RedisConstant.RUNNING_KEY) == null) {
       return "";
     }
     return runningCache.get(RedisConstant.RUNNING_KEY).toString();

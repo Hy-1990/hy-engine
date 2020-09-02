@@ -4,14 +4,19 @@ import com.alicp.jetcache.AutoReleaseLock;
 import com.alicp.jetcache.Cache;
 import com.alicp.jetcache.anno.CacheType;
 import com.alicp.jetcache.anno.CreateCache;
+import com.huyi.common.utils.EmptyUtil;
 import com.huyi.web.constant.RedisConstant;
+import com.huyi.web.entity.PlanEntity;
+import com.huyi.web.enums.PlanType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @Program: hy-engine @ClassName: StopCacheHandle @Author: huyi @Date: 2020-08-30
@@ -58,6 +63,64 @@ public class StopCacheHandle {
 
   public boolean tryLockAndRun(String key, long expire, TimeUnit timeUnit, Runnable runnable) {
     return stopLock.tryLockAndRun(key, expire, timeUnit, runnable);
+  }
+
+  public boolean saveStop(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.STOP.getCode())) {
+      return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopSet = get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isEmpty(stopSet)) {
+            Set<Integer> stopPlanId = new HashSet<>();
+            stopPlanId.add(planEntity.getPlanId());
+            put(RedisConstant.STOP_KEY, stopPlanId);
+          } else {
+            stopSet.add(planEntity.getPlanId());
+            put(RedisConstant.STOP_KEY, stopSet);
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
+  }
+
+  public boolean removeStop(PlanEntity planEntity) {
+    if (!planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
+      return false;
+    }
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopList = get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isNotEmpty(stopList)) {
+            stopList.remove(planEntity.getPlanId());
+          }
+          isOk.set(true);
+        });
+    return isOk.get();
+  }
+
+  public boolean checkStop(PlanEntity planEntity) {
+    AtomicBoolean isOk = new AtomicBoolean(false);
+    tryLockAndRun(
+        RedisConstant.STOP_KEY,
+        3,
+        TimeUnit.SECONDS,
+        () -> {
+          Set<Integer> stopPlanId = get(RedisConstant.STOP_KEY);
+          if (EmptyUtil.isNotEmpty(stopPlanId)) {
+            isOk.set(stopPlanId.contains(planEntity.getPlanId()));
+          }
+        });
+    return isOk.get();
   }
 
   public String getReport() {
