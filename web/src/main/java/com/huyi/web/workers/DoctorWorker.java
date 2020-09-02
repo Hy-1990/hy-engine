@@ -3,6 +3,7 @@ package com.huyi.web.workers;
 import com.codahale.metrics.health.HealthCheck;
 import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.handle.PlanHandle;
+import com.huyi.web.handle.ReportHandle;
 import com.huyi.web.handle.RunningCacheHandle;
 import com.huyi.web.handle.StopCacheHandle;
 import lombok.NoArgsConstructor;
@@ -17,16 +18,18 @@ public class DoctorWorker extends HealthCheck implements Runnable {
   private PlanHandle planHandle;
   private RunningCacheHandle runningCacheHandle;
   private StopCacheHandle stopCacheHandle;
+  private ReportHandle reportHandle;
 
   public DoctorWorker(
       PlanEntity planEntity,
       PlanHandle planHandle,
       RunningCacheHandle runningCacheHandle,
-      StopCacheHandle stopCacheHandle) {
+      StopCacheHandle stopCacheHandle,ReportHandle reportHandle) {
     this.planEntity = planEntity;
     this.planHandle = planHandle;
     this.runningCacheHandle = runningCacheHandle;
     this.stopCacheHandle = stopCacheHandle;
+    this.reportHandle = reportHandle;
   }
 
   @Override

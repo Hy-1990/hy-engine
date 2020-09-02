@@ -4,12 +4,8 @@ import com.huyi.common.utils.EmptyUtil;
 import com.huyi.web.config.ThreadPoolConfig;
 import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.enums.PlanType;
-import com.huyi.web.handle.PlanHandle;
-import com.huyi.web.handle.RunningCacheHandle;
-import com.huyi.web.handle.StopCacheHandle;
-import com.huyi.web.handle.TaskCacheHandle;
+import com.huyi.web.handle.*;
 import com.huyi.web.service.impl.TaskServiceImpl;
-import com.huyi.web.service.inf.TaskService;
 import com.huyi.web.workers.CrewWorker;
 import com.huyi.web.workers.DoctorWorker;
 import org.slf4j.Logger;
@@ -35,6 +31,7 @@ public class CaptainRunner implements ApplicationRunner {
   @Autowired private StopCacheHandle stopCacheHandle;
   @Autowired private TaskCacheHandle taskCacheHandle;
   @Autowired private TaskServiceImpl taskService;
+  @Autowired private ReportHandle reportHandle;
   private static boolean powerSwitch = false;
 
   @Override
@@ -51,13 +48,19 @@ public class CaptainRunner implements ApplicationRunner {
       if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
         ThreadPoolConfig.captainPool.execute(
             new CrewWorker(
-                planEntity, planHandle, runningCacheHandle, stopCacheHandle, taskCacheHandle,taskService));
+                planEntity,
+                planHandle,
+                runningCacheHandle,
+                stopCacheHandle,
+                taskCacheHandle,
+                taskService,reportHandle));
         logger.info("分配[planId:{}]计划进入工作池!", planEntity.getPlanId());
       }
 
       if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
         ThreadPoolConfig.captainPool.execute(
-            new DoctorWorker(planEntity, planHandle, runningCacheHandle, stopCacheHandle));
+            new DoctorWorker(
+                planEntity, planHandle, runningCacheHandle, stopCacheHandle, reportHandle));
         logger.info("恢复[planId:{}]计划进入工作池!", planEntity.getPlanId());
       }
       if (powerSwitch) {

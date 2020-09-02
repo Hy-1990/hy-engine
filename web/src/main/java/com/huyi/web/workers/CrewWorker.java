@@ -5,13 +5,12 @@ import com.google.common.util.concurrent.Monitor;
 import com.google.common.util.concurrent.RateLimiter;
 import com.huyi.common.dto.HYResult;
 import com.huyi.web.config.ThreadPoolConfig;
+import com.huyi.web.constant.RedisConstant;
 import com.huyi.web.entity.PlanEntity;
 import com.huyi.web.entity.ReportEntity;
 import com.huyi.web.entity.TaskEntity;
-import com.huyi.web.handle.PlanHandle;
-import com.huyi.web.handle.RunningCacheHandle;
-import com.huyi.web.handle.StopCacheHandle;
-import com.huyi.web.handle.TaskCacheHandle;
+import com.huyi.web.enums.PlanType;
+import com.huyi.web.handle.*;
 import com.huyi.web.service.impl.TaskServiceImpl;
 import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
@@ -20,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -33,8 +33,13 @@ public class CrewWorker extends HealthCheck implements Runnable {
   private StopCacheHandle stopCacheHandle;
   private TaskCacheHandle taskCacheHandle;
   private TaskServiceImpl taskService;
+  private ReportHandle reportHandle;
 
   private static Monitor monitor = new Monitor();
+  // 暂停缓存监视器
+  private static Monitor stopMonitor = new Monitor();
+  // 是否被暂停
+  private static boolean ifStop = false;
 
   public CrewWorker(
       PlanEntity planEntity,
@@ -42,13 +47,15 @@ public class CrewWorker extends HealthCheck implements Runnable {
       RunningCacheHandle runningCacheHandle,
       StopCacheHandle stopCacheHandle,
       TaskCacheHandle taskCacheHandle,
-      TaskServiceImpl taskService) {
+      TaskServiceImpl taskService,
+      ReportHandle reportHandle) {
     this.planEntity = planEntity;
     this.planHandle = planHandle;
     this.runningCacheHandle = runningCacheHandle;
     this.stopCacheHandle = stopCacheHandle;
     this.taskCacheHandle = taskCacheHandle;
     this.taskService = taskService;
+    this.reportHandle = reportHandle;
   }
 
   @Override
@@ -67,7 +74,7 @@ public class CrewWorker extends HealthCheck implements Runnable {
               TimeUnit.MINUTES);
       if (ready) {
         try {
-          List<TaskEntity> tasks = new ArrayList<>();
+          List<TaskEntity> tasks;
           long workStamped = PlanHandle.workLock.writeLock();
           PlanHandle.workQueue.put(
               planEntity.getPlanId(),
@@ -80,16 +87,41 @@ public class CrewWorker extends HealthCheck implements Runnable {
           // 开始批量完成任务
           RateLimiter rateLimiter = RateLimiter.create(Double.valueOf(planEntity.getRobotSize()));
           List<CompletableFuture<HYResult<ReportEntity>>> result = new ArrayList<>();
-          tasks.forEach(
-              t -> {
+          for (TaskEntity task : tasks) {
+            if (stopMonitor.enterIf(
+                stopMonitor.newGuard(
+                    () ->
+                        stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
+                            .noneMatch(t -> task.getPlanId().equals(t))))) {
+              try {
                 result.add(
                     CompletableFuture.supplyAsync(
-                        () -> {
-                          HYResult<ReportEntity> hyResult = taskService.doTask(t, rateLimiter);
-                          return hyResult;
-                        },
-                        ThreadPoolConfig.crewPool));
+                        () -> taskService.doTask(task, rateLimiter), ThreadPoolConfig.crewPool));
+              } finally {
+                stopMonitor.leave();
+              }
+            } else {
+              ifStop = true;
+              break;
+            }
+          }
+          // 处理任务完成结果
+          List<ReportEntity> reports = new ArrayList<>();
+          result.forEach(
+              x -> {
+                try {
+                  reports.add(x.get().getData());
+                } catch (InterruptedException | ExecutionException e) {
+                  logger.error("工作异常:{}", e.getMessage());
+                }
               });
+
+          if (ifStop) {
+            planHandle.saveReport(planEntity.getPlanId(), reports);
+            planHandle.changePlanStatus(planEntity, PlanType.STOP);
+          } else {
+            if (reports.size() == tasks.size()) {}
+          }
 
         } catch (Exception e) {
           logger.error("工作异常:{}", e.getMessage());

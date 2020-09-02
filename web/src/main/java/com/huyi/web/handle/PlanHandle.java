@@ -5,6 +5,7 @@ import com.google.common.util.concurrent.Monitor;
 import com.huyi.common.utils.EmptyUtil;
 import com.huyi.web.constant.RedisConstant;
 import com.huyi.web.entity.PlanEntity;
+import com.huyi.web.entity.ReportEntity;
 import com.huyi.web.entity.TaskEntity;
 import com.huyi.web.enums.PlanCode;
 import com.huyi.web.enums.PlanType;
@@ -39,16 +40,22 @@ public class PlanHandle {
 
   public static ConcurrentHashMap<Integer, LinkedList<PlanEntity>> planQueue;
 
+  public static ConcurrentHashMap<Integer, List<ReportEntity>> reportQueue;
+
   public static StampedLock workLock;
 
   public static StampedLock planLock;
+
+  public static StampedLock reportLock;
 
   @PostConstruct
   public void init() {
     workQueue = new ConcurrentHashMap<>();
     planQueue = new ConcurrentHashMap<>();
+    reportQueue = new ConcurrentHashMap<>();
     workLock = new StampedLock();
     planLock = new StampedLock();
+    reportLock = new StampedLock();
   }
 
   public void dispatch(PlanEntity planEntity) {
@@ -280,6 +287,51 @@ public class PlanHandle {
     return isOk.get();
   }
 
+  public boolean changePlanStatus(PlanEntity planEntity, PlanType planType) {
+    if (EmptyUtil.isEmpty(planEntity)) {
+      return false;
+    }
+    long stamped = planLock.writeLock();
+    try {
+      if (planQueue.contains(planEntity.getUserId())) {
+        LinkedList<PlanEntity> linkedList = planQueue.get(planEntity.getUserId());
+        linkedList =
+            linkedList.stream()
+                .peek(
+                    x -> {
+                      if (x.getPlanId().equals(planEntity.getPlanId())) {
+                        x.setStatus(planType.getCode());
+                      }
+                    })
+                .collect(Collectors.toCollection(LinkedList::new));
+        planQueue.putIfAbsent(planEntity.getUserId(), linkedList);
+        return true;
+      } else {
+        return false;
+      }
+    } finally {
+      planLock.unlockWrite(stamped);
+    }
+  }
+
+  public void saveReport(Integer planId, List<ReportEntity> reports) {
+    long stamped = reportLock.writeLock();
+    try {
+      reportQueue.put(planId, reports);
+    } finally {
+      reportLock.unlockWrite(stamped);
+    }
+  }
+
+  public List<ReportEntity> getReport(Integer planId) {
+    long stamped = reportLock.readLock();
+    try {
+      return reportQueue.get(planId);
+    } finally {
+      reportLock.unlockRead(stamped);
+    }
+  }
+
   public String getPlanQueue() {
     if (planQueue.size() == 0) {
       return "";
@@ -289,7 +341,7 @@ public class PlanHandle {
           (k, v) -> {
             plans.add("userId:" + k + ",plans:{" + v.toString() + "}");
           });
-      return Joiner.on(";").join(plans);
+      return "计划队列详情：" + Joiner.on(";").join(plans);
     }
   }
 
@@ -302,7 +354,7 @@ public class PlanHandle {
           (k, v) -> {
             works.add("planId:" + k + ",works:{" + v.toString() + "}");
           });
-      return Joiner.on(";").join(works);
+      return "任务队列详情：" + Joiner.on(";").join(works);
     }
   }
 

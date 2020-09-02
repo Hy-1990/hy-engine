@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import static java.util.concurrent.ThreadLocalRandom.current;
 
 /** @Author huyi @Date 2020/8/25 13:50 @Description: 任务功能接口实现 */
@@ -52,7 +53,12 @@ public class TaskServiceImpl implements TaskService {
       return hyResult;
     } else {
       hyResult = hyResult.error("task异常");
-      hyResult.setData(ReportEntity.builder().status(TaskType.EXCEPTION.getCode()).build());
+      hyResult.setData(
+          ReportEntity.builder()
+              .planId(taskEntity.getPlanId())
+              .taskId(taskEntity.getTaskId())
+              .status(TaskType.EXCEPTION.getCode())
+              .build());
       return hyResult;
     }
   }
