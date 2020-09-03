@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 
@@ -47,6 +48,27 @@ public class ReportHandle {
     if (reportQueue.size() == 0) {
       return "";
     }
-    return "完成结果计划id：" + reportQueue.keySet().toString();
+    ConcurrentHashMap<Integer, Integer> map = new ConcurrentHashMap<>();
+    reportQueue.forEach(
+        (k, v) -> {
+          map.put(k, v.size());
+        });
+    return "完成结果计划id：" + map.toString();
+  }
+
+  public ConcurrentHashMap<Integer, List<ReportEntity>> findUpdate(Set<Integer> keys) {
+    ConcurrentHashMap<Integer, List<ReportEntity>> result = new ConcurrentHashMap<>();
+    long stamped = reportLock.readLock();
+    try {
+      reportQueue.forEach(
+          (k, v) -> {
+            if (!keys.contains(k)) {
+              result.put(k, v);
+            }
+          });
+      return result;
+    } finally {
+      reportLock.unlockRead(stamped);
+    }
   }
 }

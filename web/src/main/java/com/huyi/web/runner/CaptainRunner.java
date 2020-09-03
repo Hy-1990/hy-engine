@@ -36,37 +36,55 @@ public class CaptainRunner implements ApplicationRunner {
 
   @Override
   public void run(ApplicationArguments args) throws Exception {
-    logger.info("核心引擎启动!");
-    while (true) {
-      PlanEntity planEntity = planHandle.findPlan();
-      if (EmptyUtil.isEmpty(planEntity)) {
-        TimeUnit.SECONDS.sleep(10);
-        logger.info("计划队列暂时无可工作计划，引擎空闲10秒钟。");
-        continue;
-      }
+    logger.info("**************HY-核心引擎启动!**************");
+    ThreadPoolConfig.captainSinglePool.execute(
+        () -> {
+          while (true) {
+            PlanEntity planEntity = planHandle.findPlan();
+            if (EmptyUtil.isEmpty(planEntity)) {
+              logger.info("计划队列暂时无可工作计划，引擎空闲10秒钟。");
+              try {
+                TimeUnit.SECONDS.sleep(10);
+              } catch (InterruptedException e) {
+                e.printStackTrace();
+              }
+              continue;
+            }
 
-      if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
-        ThreadPoolConfig.captainPool.execute(
-            new CrewWorker(
-                planEntity,
-                planHandle,
-                runningCacheHandle,
-                stopCacheHandle,
-                taskCacheHandle,
-                taskService,reportHandle));
-        logger.info("分配[planId:{}]计划进入工作池!", planEntity.getPlanId());
-      }
+            if (planEntity.getStatus().equals(PlanType.READY.getCode())) {
+              planHandle.changePlanStatus(planEntity, PlanType.RUNNING);
+              ThreadPoolConfig.captainPool.execute(
+                  new CrewWorker(
+                      planEntity,
+                      planHandle,
+                      runningCacheHandle,
+                      stopCacheHandle,
+                      taskCacheHandle,
+                      taskService,
+                      reportHandle));
+              logger.info(
+                  "分配[planId:{}]计划进入工作池!计划信息:{}", planEntity.getPlanId(), planEntity.toString());
+            }
 
-      if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
-        ThreadPoolConfig.captainPool.execute(
-            new DoctorWorker(
-                planEntity, planHandle, runningCacheHandle, stopCacheHandle, reportHandle));
-        logger.info("恢复[planId:{}]计划进入工作池!", planEntity.getPlanId());
-      }
-      if (powerSwitch) {
-        break;
-      }
-    }
+            if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
+              planHandle.changePlanStatus(planEntity, PlanType.RUNNING);
+              ThreadPoolConfig.captainPool.execute(
+                  new DoctorWorker(
+                      planEntity,
+                      planHandle,
+                      runningCacheHandle,
+                      stopCacheHandle,
+                      taskCacheHandle,
+                      taskService,
+                      reportHandle));
+              logger.info(
+                  "恢复[planId:{}]计划进入工作池!计划信息:{}", planEntity.getPlanId(), planEntity.toString());
+            }
+            if (powerSwitch) {
+              break;
+            }
+          }
+        });
   }
 
   public void close() {

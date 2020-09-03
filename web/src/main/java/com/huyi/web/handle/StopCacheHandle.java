@@ -90,9 +90,6 @@ public class StopCacheHandle {
   }
 
   public boolean removeStop(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
-      return false;
-    }
     AtomicBoolean isOk = new AtomicBoolean(false);
     tryLockAndRun(
         RedisConstant.STOP_KEY,
@@ -101,7 +98,8 @@ public class StopCacheHandle {
         () -> {
           Set<Integer> stopList = get(RedisConstant.STOP_KEY);
           if (EmptyUtil.isNotEmpty(stopList)) {
-            stopList.remove(planEntity.getPlanId());
+            stopList.removeIf(s -> s.equals(planEntity.getPlanId()));
+            put(RedisConstant.STOP_KEY, stopList);
           }
           isOk.set(true);
         });

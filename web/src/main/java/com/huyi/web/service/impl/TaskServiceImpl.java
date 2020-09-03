@@ -31,6 +31,7 @@ public class TaskServiceImpl implements TaskService {
   @Override
   public HYResult<ReportEntity> doTask(TaskEntity taskEntity, RateLimiter rateLimiter) {
     rateLimiter.acquire();
+//    logger.info("线程名：{}", Thread.currentThread().getName());
     HYResult<ReportEntity> hyResult = new HYResult<>();
     if (EmptyUtil.isEmpty(taskEntity.getPlanId()) || EmptyUtil.isEmpty(taskEntity.getTaskId())) {
       hyResult = hyResult.error("task异常");

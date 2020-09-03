@@ -71,9 +71,9 @@ public class InputWorker extends HealthCheck implements Runnable {
                         planHandle.savePlan(
                             p.getUserId(), new LinkedList<>(Collections.singletonList(p)));
                         planHandle.saveWorkQueue(p.getPlanId(), new ArrayList<>());
+                        runningCacheHandle.saveRunning(p);
                         plans.remove(p);
                         planCacheHandle.put(key.split("-")[2], plans);
-                        runningCacheHandle.saveRunning(p);
                         hasPoll.set(true);
                       } else {
                         LinkedList<PlanEntity> localPlans = planHandle.getPlan(p.getUserId());
@@ -89,9 +89,9 @@ public class InputWorker extends HealthCheck implements Runnable {
                                   .collect(Collectors.toCollection(LinkedList::new));
                           planHandle.savePlan(p.getUserId(), localPlans);
                           planHandle.saveWorkQueue(p.getPlanId(), new ArrayList<>());
+                          runningCacheHandle.saveRunning(p);
                           plans.remove(p);
                           planCacheHandle.put(key.split("-")[2], plans);
-                          runningCacheHandle.saveRunning(p);
                           hasPoll.set(true);
                         }
                       }

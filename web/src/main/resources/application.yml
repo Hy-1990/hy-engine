@@ -5,17 +5,20 @@ spring:
         enabled: true
     sampler:
       probability: 1.0 # 将采样比例设置为 1.0，也就是全部都需要。默认是 0.1
+  elasticsearch:
+    rest:
+      uris: 192.168.6.82:9200
   rabbitmq:
-    host: localhost
+    host: 192.168.6.82
     port: 5672
-    username: guest
-    password: guest
+    username: huyi
+    password: 123456
     virtual-host: /
   redis:
     timeout: 6000ms
     password:
     #单机配置
-    host: localhost
+    host: 192.168.6.82
     port: 6379
     #集群配置
     #    cluster:
@@ -52,7 +55,7 @@ jetcache:
         minIdle: 5
         maxIdle: 20
         maxTotal: 50
-      host: localhost
+      host: 192.168.6.82
       port: 6379
 
 

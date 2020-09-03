@@ -21,4 +21,12 @@ public class ThreadPoolConfig {
   /** 常规工作池 */
   public static final ExecutorService crewPool =
       Executors.newFixedThreadPool(2000, new CustomizableThreadFactory("CrewThread-"));
+
+  /** runner captain单例池 */
+  public static final ExecutorService captainSinglePool =
+      Executors.newSingleThreadExecutor(new CustomizableThreadFactory("CaptainSingleThread-"));
+
+  /** runner report单例池 */
+  public static final ExecutorService datapushSinglePool =
+      Executors.newSingleThreadExecutor(new CustomizableThreadFactory("DataPushSingleThread-"));
 }

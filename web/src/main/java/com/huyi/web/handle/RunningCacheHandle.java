@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 /** @Author huyi @Date 2020/8/31 10:51 @Description: 运行队列缓存 */
 @Component
@@ -64,9 +65,6 @@ public class RunningCacheHandle {
   }
 
   public boolean removeRunning(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
-      return false;
-    }
     AtomicBoolean isOk = new AtomicBoolean(false);
     tryLockAndRun(
         RedisConstant.RUNNING_KEY,
@@ -75,8 +73,8 @@ public class RunningCacheHandle {
         () -> {
           Set<PlanEntity> runningList = get(RedisConstant.RUNNING_KEY);
           if (EmptyUtil.isNotEmpty(runningList)) {
-            boolean remove = false;
             runningList.removeIf(p -> p.getPlanId().equals(planEntity.getPlanId()));
+            put(RedisConstant.RUNNING_KEY, runningList);
           }
           isOk.set(true);
         });
@@ -100,7 +98,8 @@ public class RunningCacheHandle {
   }
 
   public boolean saveRunning(PlanEntity planEntity) {
-    if (!planEntity.getStatus().equals(PlanType.READY.getCode())) {
+    if (!planEntity.getStatus().equals(PlanType.READY.getCode())
+        && !planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
       return false;
     }
     AtomicBoolean isOk = new AtomicBoolean(false);
@@ -129,6 +128,12 @@ public class RunningCacheHandle {
     if (runningCache.get(RedisConstant.RUNNING_KEY) == null) {
       return "";
     }
-    return runningCache.get(RedisConstant.RUNNING_KEY).toString();
+    return "["
+        + Joiner.on(",")
+            .join(
+                runningCache.get(RedisConstant.RUNNING_KEY).stream()
+                    .map(PlanEntity::getPlanId)
+                    .collect(Collectors.toList()))
+        + "]";
   }
 }

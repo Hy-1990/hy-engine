@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /** @Author huyi @Date 2020/8/27 17:22 @Description: */
 @Component
@@ -73,7 +74,16 @@ public class TaskCacheHandle {
       List<String> reports = new ArrayList<>();
       keys.forEach(
           (x) -> {
-            reports.add("planId:" + x.split("-")[2] + ",tasks:{" + get(x.split("-")[2]) + "}");
+            reports.add(
+                "planId:"
+                    + x.split("-")[2]
+                    + ",tasks:{"
+                    + Joiner.on(",")
+                        .join(
+                            get(x.split("-")[2]).stream()
+                                .map(TaskEntity::getTaskId)
+                                .collect(Collectors.toList()))
+                    + "}");
           });
       return Joiner.on(";").join(reports);
     }

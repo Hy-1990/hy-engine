@@ -27,6 +27,7 @@ public class MetricsRunner implements ApplicationRunner {
   @Autowired private StopCacheHandle stopCacheHandle;
   @Autowired private RunningCacheHandle runningCacheHandle;
   @Autowired private TaskCacheHandle taskCacheHandle;
+  @Autowired private ReportHandle reportHandle;
 
   private static final MetricRegistry REGISTRY = new MetricRegistry();
 
@@ -47,6 +48,13 @@ public class MetricsRunner implements ApplicationRunner {
         MetricRegistry.name(PlanHandle.class, "WorkQueue"),
         (Gauge<String>) planHandlel::getTaskQueue);
     REGISTRY.register(
+        MetricRegistry.name(PlanHandle.class, "ReportQueue"),
+        (Gauge<String>) planHandlel::getReportQueue);
+    REGISTRY.register(
+        MetricRegistry.name(ReportHandle.class, "ReportQueue"),
+        (Gauge<String>) reportHandle::getCacheReport);
+
+    REGISTRY.register(
         MetricRegistry.name(PlanCacheHandle.class, "PlanCache"),
         (Gauge<String>) planCacheHandle::getCacheReport);
     REGISTRY.register(
@@ -66,5 +74,6 @@ public class MetricsRunner implements ApplicationRunner {
     REGISTRY.gauge("HY-METRICS", () -> HEALTH_CHECK_REGISTRY::runHealthChecks);
 
     REPORTER.start(10, TimeUnit.SECONDS);
+    logger.info("**************HY-监控引擎启动!**************");
   }
 }

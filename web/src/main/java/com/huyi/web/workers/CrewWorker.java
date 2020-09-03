@@ -61,13 +61,15 @@ public class CrewWorker extends HealthCheck implements Runnable {
   @Override
   public void run() {
     try {
+      logger.info("计划ID:{},开始工作！", planEntity.getPlanId());
       boolean ready =
           monitor.enterWhen(
               new Monitor.Guard(monitor) {
                 @Override
                 public boolean isSatisfied() {
-                  return taskCacheHandle.get(planEntity.getPlanId() + "").size()
-                      >= planEntity.getTaskAmount();
+                  return taskCacheHandle.get(planEntity.getPlanId() + "") != null
+                      && taskCacheHandle.get(planEntity.getPlanId() + "").size()
+                          >= planEntity.getTaskAmount();
                 }
               },
               30,
@@ -89,8 +91,9 @@ public class CrewWorker extends HealthCheck implements Runnable {
             if (stopMonitor.enterIf(
                 stopMonitor.newGuard(
                     () ->
-                        stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
-                            .noneMatch(t -> task.getPlanId().equals(t))))) {
+                        (stopCacheHandle.get(RedisConstant.STOP_KEY) == null
+                            || stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
+                                .noneMatch(t -> task.getPlanId().equals(t)))))) {
               try {
                 result.add(
                     CompletableFuture.supplyAsync(
@@ -114,10 +117,17 @@ public class CrewWorker extends HealthCheck implements Runnable {
                 }
               });
 
-          if (ifStop) {
+          if (ifStop && reports.size() < tasks.size()) {
             // 如果被暂停，则存回结果队列，修改计划为暂停状态
             planHandle.saveReport(planEntity.getPlanId(), reports);
             planHandle.changePlanStatus(planEntity, PlanType.STOP);
+            tasks =
+                tasks.stream()
+                    .filter(
+                        t -> reports.stream().noneMatch(r -> r.getTaskId().equals(t.getTaskId())))
+                    .collect(Collectors.toList());
+            planHandle.saveWorkQueue(planEntity.getPlanId(), tasks);
+            logger.info("计划ID:{},已暂停并保存!", planEntity.getPlanId());
           } else {
             // 如果成功，则存到结果报告队列，修改计划为完成状态，删除运行内存中的计划
             reportHandle.saveReport(planEntity.getPlanId(), reports);
@@ -125,15 +135,22 @@ public class CrewWorker extends HealthCheck implements Runnable {
             planHandle.changePlanStatus(planEntity, PlanType.FINISHED);
             planHandle.removeWorkQueue(planEntity.getPlanId());
             taskCacheHandle.remove(planEntity.getPlanId() + "");
+            stopCacheHandle.removeStop(planEntity);
+            planHandle.removeReport(planEntity.getPlanId());
+            logger.info("计划ID:{},已完成!", planEntity.getPlanId());
           }
 
         } catch (Exception e) {
-          logger.error("工作异常:{}", e.getMessage());
+          e.printStackTrace();
+          logger.error("计划ID:{},工作异常:{}", planEntity.getPlanId(), e.getMessage());
         } finally {
           monitor.leave();
         }
       } else {
         logger.error("计划：{}，因为任务30分钟内没有全部上送到缓存爆破！", planEntity.getPlanId());
+        planHandle.deletePlan(planEntity);
+        planHandle.removeWorkQueue(planEntity.getPlanId());
+        taskCacheHandle.remove(planEntity.getPlanId() + "");
         monitor.leave();
       }
     } catch (InterruptedException e) {

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /** @Author huyi @Date 2020/8/27 16:32 @Description: */
 @Component
@@ -70,7 +71,16 @@ public class PlanCacheHandle {
       List<String> reports = new ArrayList<>();
       keys.forEach(
           (x) -> {
-            reports.add("userId:" + x.split("-")[2] + ",plans:{" + get(x.split("-")[2]) + "}");
+            reports.add(
+                "userId:"
+                    + x.split("-")[2]
+                    + ",plans:{"
+                    + Joiner.on(",")
+                        .join(
+                            get(x.split("-")[2]).stream()
+                                .map(PlanEntity::getPlanId)
+                                .collect(Collectors.toList()))
+                    + "}");
           });
       return Joiner.on(";").join(reports);
     }

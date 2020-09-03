@@ -97,6 +97,27 @@ public class PlanHandle {
                           result.set(false);
                           msg.append(PlanCode.CREATE_EXIST.getMsg());
                         }
+                      } else if (planEntity.getStatus().equals(PlanType.STOP.getCode())) {
+                        boolean stop = stopCacheHandle.saveStop(planEntity);
+                        boolean removeRun = runningCacheHandle.removeRunning(planEntity);
+                        if (stop && removeRun) {
+                          result.set(true);
+                          msg.append(PlanCode.STOP_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.STOP_FAILED.getMsg());
+                        }
+                        // 恢复暂停任务，从暂停队列排除，添加进运行队列
+                      } else if (planEntity.getStatus().equals(PlanType.RUNNING.getCode())) {
+                        boolean remove = stopCacheHandle.removeStop(planEntity);
+                        boolean reRun = runningCacheHandle.saveRunning(planEntity);
+                        if (remove && reRun) {
+                          result.set(true);
+                          msg.append(PlanCode.RERUN_SUCCESS.getMsg());
+                        } else {
+                          result.set(false);
+                          msg.append(PlanCode.RERUN_FAILED.getMsg());
+                        }
                       } else {
                         result.set(false);
                         msg.append(PlanCode.CREATE_INVALID.getMsg());
@@ -195,13 +216,36 @@ public class PlanHandle {
     }
   }
 
+  public void deletePlan(PlanEntity planEntity) {
+    if (EmptyUtil.isEmpty(planEntity)
+        || EmptyUtil.isEmpty(planEntity.getUserId())
+        || EmptyUtil.isEmpty(planEntity.getPlanId())) {
+      return;
+    }
+    long stamped = planLock.writeLock();
+    try {
+      LinkedList<PlanEntity> plans = planQueue.get(planEntity.getUserId());
+      if (EmptyUtil.isEmpty(plans)) {
+        return;
+      }
+      plans =
+          plans.stream()
+              .filter(p -> !p.getPlanId().equals(planEntity.getPlanId()))
+              .collect(Collectors.toCollection(LinkedList::new));
+      planQueue.putIfAbsent(planEntity.getUserId(), plans);
+    } finally {
+      planLock.unlockWrite(stamped);
+    }
+  }
+
   public boolean changePlanStatus(PlanEntity planEntity, PlanType planType) {
     if (EmptyUtil.isEmpty(planEntity)) {
       return false;
     }
     long stamped = planLock.writeLock();
     try {
-      if (planQueue.contains(planEntity.getUserId())) {
+      System.out.println(planQueue.toString());
+      if (planQueue.containsKey(planEntity.getUserId())) {
         LinkedList<PlanEntity> linkedList = planQueue.get(planEntity.getUserId());
         linkedList =
             linkedList.stream()
@@ -212,7 +256,7 @@ public class PlanHandle {
                       }
                     })
                 .collect(Collectors.toCollection(LinkedList::new));
-        planQueue.putIfAbsent(planEntity.getUserId(), linkedList);
+        planQueue.put(planEntity.getUserId(), linkedList);
         return true;
       } else {
         return false;
@@ -283,7 +327,21 @@ public class PlanHandle {
       List<String> plans = new ArrayList<>();
       planQueue.forEach(
           (k, v) -> {
-            plans.add("userId:" + k + ",plans:{" + v.toString() + "}");
+            plans.add(
+                "userId:"
+                    + k
+                    + ",plans:{size:"
+                    + v.size()
+                    + ","
+                    + Joiner.on(",")
+                        .join(
+                            Collections.singleton(
+                                v.stream()
+                                    .collect(
+                                        Collectors.toMap(
+                                            PlanEntity::getPlanId, PlanEntity::getTaskAmount))
+                                    .toString()))
+                    + "}");
           });
       return "计划队列详情：" + Joiner.on(";").join(plans);
     }
@@ -296,9 +354,38 @@ public class PlanHandle {
       List<String> works = new ArrayList<>();
       workQueue.forEach(
           (k, v) -> {
-            works.add("planId:" + k + ",works:{" + v.toString() + "}");
+            works.add(
+                "planId:"
+                    + k
+                    + ",works:{size:"
+                    + v.size()
+                    + ","
+                    + Joiner.on(",")
+                        .join(v.stream().map(TaskEntity::getTaskId).collect(Collectors.toList()))
+                    + "}");
           });
       return "任务队列详情：" + Joiner.on(";").join(works);
+    }
+  }
+
+  public String getReportQueue() {
+    if (reportQueue.size() == 0) {
+      return "";
+    } else {
+      List<String> reports = new ArrayList<>();
+      reportQueue.forEach(
+          (k, v) -> {
+            reports.add(
+                "planId:"
+                    + k
+                    + ",reportId:{size:"
+                    + v.size()
+                    + ","
+                    + Joiner.on(",")
+                        .join(v.stream().map(ReportEntity::getTaskId).collect(Collectors.toList()))
+                    + "}");
+          });
+      return "任务完成队列报表：" + Joiner.on(";").join(reports);
     }
   }
 
@@ -314,10 +401,12 @@ public class PlanHandle {
                           || p.getStatus().equals(PlanType.STOP.getCode()))
               .filter(
                   y ->
-                      runningCacheHandle.get(RedisConstant.RUNNING_KEY).stream()
-                              .anyMatch(x -> x.getPlanId().equals(y.getPlanId()))
-                          && stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
-                              .noneMatch(z -> y.getPlanId().equals(z)))
+                      (runningCacheHandle.get(RedisConstant.RUNNING_KEY) != null
+                              && runningCacheHandle.get(RedisConstant.RUNNING_KEY).stream()
+                                  .anyMatch(x -> x.getPlanId().equals(y.getPlanId())))
+                          && (stopCacheHandle.get(RedisConstant.STOP_KEY) == null
+                              || stopCacheHandle.get(RedisConstant.STOP_KEY).stream()
+                                  .noneMatch(z -> y.getPlanId().equals(z))))
               .findFirst();
       if (plan.isPresent()) {
         result.set(plan.get());
